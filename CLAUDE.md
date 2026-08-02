@@ -120,34 +120,78 @@ web server extends that guarantee to a process boundary and must not weaken it.
 
 ## The run directory is the interface
 
-The simulation writes a directory; the server watches it. There is no shared database,
-no socket protocol into the simulator, no HDF5 concurrency.
+The simulation writes a directory; the server watches it. There is no shared database
+and no socket into the simulator. The full contract is `PlanetBuilder/RUN_FORMAT.md`,
+which the writer owns; the essentials:
 
 ```
 runs/<run_id>/
   run.json          once at launch: schema_version, config, seed, models
   status.json       atomically rewritten: state, last step, heartbeat, exit code
-  manifest.jsonl    append-only, one line per completed step + its scalar diagnostics
-  steps/000123.h5   one file per recorded step
-  effects/          rule-5 before/after/difference images
+  manifest.jsonl    append-only: a line per recorded step, a line per CLOSED part
+  parts/run_p003.h5 the recorded iterations, `split_every` per file
+  figures/          rule-5 before/after/difference images
   run.log           subprocess stdout/stderr
 ```
 
-Two properties make this safe to read while it is being written, with no locking:
+**The unit of publication is a part, not an iteration.** A closed HDF5 file is safe
+for unlimited concurrent readers; a file still open for writing is not, and SWMR --
+HDF5's answer to that -- is unavailable here because the writer creates a group per
+iteration and SWMR freezes a file's structure. So:
 
-- **Step files are written to a temp name and renamed into place.** `rename()` is atomic,
-  so a reader sees a complete file or no file — never half of one.
-- **The manifest is append-only JSONL.** Tailing is safe; a torn final line is invalid
-  JSON, so skip it and re-read on the next poll.
+- **Read a part only after its `part` line appears in the manifest.** The in-progress
+  file is on disk and must be ignored; a directory listing is not the index.
+- **The manifest is append-only JSONL**, safe to tail. A torn final line is invalid
+  JSON: skip it and re-read on the next poll.
+- **Live latency is `split_every` iterations**, and that is a configuration knob rather
+  than something to engineer around.
 
-Read the timeline from `manifest.jsonl` — it carries each step's scalar diagnostics, so
-charts and the scrubber stream without opening a single `.h5`. Open a step file only for
-the step actually being displayed.
+**Read the timeline from the manifest.** Its `step` lines carry the scalar diagnostics
+every recorded iteration, so charts and the scrubber stay live at full rate without
+opening a single `.h5`. Open a part only for the step actually being displayed.
 
-**`schema_version` is checked before anything is drawn.** An unknown major version is
-refused with a clear message; half-rendering a file you do not understand is how a
-viewer starts lying. Keep a golden fixture run directory in the tests, so a schema drift
-in `PlanetBuilder` fails here as a test rather than in a browser.
+## Reading HDF5 without linking HDF5
+
+`libhdf5` is a C library that serializes every call in a process behind one global
+lock, so threads do not read in parallel however many files they open. **Separate
+processes do.**
+
+So this server keeps a **hot pool of worker processes**, each with `h5py` already
+imported, and hands them "read step N from part file F" jobs. Two things fall out:
+
+- **The server never links `libhdf5`.** No C dependency, no cross-compilation problem,
+  and no global lock in the request path.
+- **Reads are genuinely parallel**, one per worker, and a corrupt file kills one
+  worker rather than the server.
+
+Keep the pool warm: a cold Python process paying `import h5py` costs a few hundred
+milliseconds, which is invisible per step and very visible while scrubbing a timeline.
+Cap the pool, and treat a worker that stops answering as a failed read, not a hang.
+
+## Talking to the browser
+
+Two channels, both plain HTTP. Neither pushes bulk data.
+
+- **Events: SSE.** One long-lived `GET /runs/:id/events` streaming short lines as steps
+  and parts land. Browsers have `EventSource` built in and it reconnects itself.
+  WebSockets are bidirectional machinery this does not need.
+- **Data: ordinary GET.** `GET /runs/:id/steps/124/cloud` returns that step's arrays.
+
+**The browser pulls; the server never pushes payloads.** If the simulation outruns the
+display, the client skips to the newest step and never asks for what it missed --
+backpressure with nothing buffered server-side. Pushing data down the event stream
+would queue it in the server instead.
+
+**JSON first.** At a few thousand points a step is a few hundred KB of JSON, parses in
+milliseconds, and can be read in a browser tab while debugging. Move to raw typed
+arrays when the point count makes that hurt -- around 50-100k points -- behind the same
+URL via content negotiation, so the switch costs no redesign. Casting f64 to f32 for
+the wire is a display-layer transform and gets declared like any other.
+
+**`schema_version` is checked before anything is drawn.** An unknown MAJOR is refused
+with a clear message; half-rendering a file you do not understand is how a viewer
+starts lying. Keep a golden fixture run directory in the tests, so a schema drift in
+`PlanetBuilder` fails here as a test rather than in a browser.
 
 ---
 
