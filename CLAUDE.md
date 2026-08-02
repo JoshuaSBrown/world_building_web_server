@@ -40,10 +40,18 @@ transform applied for legibility is **visible in the UI**, not baked in silently
 
 - Radial exaggeration is labelled and toggleable against true scale — `view_planet.py`
   offers EXAGGERATED / TRUE SCALE, and that is the standard.
-- **Colour scales are fixed across time, not autoscaled per frame.** This is the single
-  most important rule in the file. A per-frame autoscale makes a planet in steady state
-  appear to churn, and makes a real trend invisible because every frame is renormalized
-  to look the same. Scale ranges come from the run, not from the visible step.
+- **The colour scale is explicit, controllable, and always displayed.** Both modes are
+  legitimate — `auto` (from the data in view) and a fixed `(min, max)` — and the viewer
+  can switch between them and set limits **interactively, on the fly**. What is not
+  legitimate is a scale that changes without saying so: a silent per-frame autoscale
+  makes a planet in steady state appear to churn and flattens a real trend, because
+  every frame is renormalized to look the same. So the mode and the limits in effect are
+  on screen at all times, and when a fixed scale clips, the number of values beyond it is
+  reported rather than hidden.
+- **Two frames being compared share one scale.** Before/after pairs autoscale over the
+  *union* of both frames, never independently — two scales is precisely the case where
+  auto is wrong, because the comparison is the point. Difference views are symmetric
+  about zero in either mode.
 - Every layer states its units and its source dataset. A number without a unit is not
   data — the writer already carries units as an attribute on every array, so pass them
   through to the UI rather than re-deriving them.
@@ -198,7 +206,9 @@ see from here.
 
 - Any physics computed, estimated, or interpolated in this repo.
 - Drawing a value the model never produced — including a smoothed or gap-filled one.
-- A colour scale that autoscales per frame.
+- A scale whose mode or limits are not shown on screen — including an autoscale the
+  viewer cannot see is happening.
+- Two frames compared side by side on two different scales.
 - An unlabelled transform: exaggeration, downsampling, or unit conversion presented as
   the raw result.
 - `import tectonics`, or any in-process call into the simulator.
