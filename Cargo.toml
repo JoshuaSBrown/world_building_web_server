@@ -1,0 +1,22 @@
+[package]
+name = "world_building_web_server"
+version = "0.1.0"
+edition = "2021"
+
+# Deliberately few dependencies, and none of them HDF5.
+#
+# `libhdf5` is a C library that serialises every call in a process behind one
+# global lock, so a thread pool would gain nothing however many files it opened.
+# Reads happen in a warm pool of Python worker processes instead (see
+# `src/workers.rs`), which read in parallel because separate processes do not
+# contend -- and which keeps this binary free of a C dependency entirely.
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "fs", "io-util", "sync", "time", "signal"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+futures-core = "0.3"
+tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

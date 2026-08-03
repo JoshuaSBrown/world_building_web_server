@@ -1,0 +1,6 @@
+# Rust build output
+/target
+
+# Run directories: simulation output, not source. Every byte in here is
+# reproducible from a seed and a config.
+/runs
