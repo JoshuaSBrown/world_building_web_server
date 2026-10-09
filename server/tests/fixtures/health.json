@@ -1,0 +1,11 @@
+{
+  "exporter": false,
+  "runDefaults": {
+    "checkpointEverySteps": 2,
+    "dtMyr": 8.0,
+    "nPoints": 500,
+    "steps": 40
+  },
+  "schemaMajor": 1,
+  "status": "ok"
+}

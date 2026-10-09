@@ -129,23 +129,21 @@ impl Runner {
             .is_none_or(|age| age > STALE_HEARTBEAT_SECONDS);
 
         let recovered = match status.state.as_str() {
-            "complete" => JobStatus::Complete {
-                elapsed_seconds: status.elapsed_seconds().unwrap_or(f64::NAN),
+            "complete" => JobStatus::complete(
+                status.elapsed_seconds().unwrap_or(f64::NAN),
                 steps_total,
-            },
-            "failed" => JobStatus::Failed { code: "failed".into(), steps_total },
-            "cancelled" => JobStatus::Cancelled {
-                step: status.last_step.unwrap_or(0), steps_total,
-            },
-            _ if stale => JobStatus::Failed { code: "interrupted".into(), steps_total },
-            _ => JobStatus::Running {
-                stage: "evolving".into(),
-                progress: status.last_step.map_or(0.0, |s| {
+            ),
+            "failed" => JobStatus::failed("failed", steps_total),
+            "cancelled" => JobStatus::cancelled(status.last_step.unwrap_or(0), steps_total),
+            _ if stale => JobStatus::failed("interrupted", steps_total),
+            _ => JobStatus::running(
+                "evolving",
+                status.last_step.map_or(0.0, |s| {
                     if steps_total > 0 { (s as f64 / steps_total as f64).clamp(0.0, 1.0) } else { 0.0 }
                 }),
-                step: status.last_step.unwrap_or(0),
+                status.last_step.unwrap_or(0),
                 steps_total,
-            },
+            ),
         };
 
         let (tx, _) = broadcast::channel(256);
@@ -161,7 +159,7 @@ impl Runner {
         self.jobs.lock().await.insert(id.to_string(), job.clone());
         // A run still being written by someone else keeps being watched, so a
         // reload during a run picks the stream back up.
-        if matches!(job.status().await, JobStatus::Running { .. }) {
+        if job.status().await.is_running() {
             tokio::spawn(watch_manifest(job.clone()));
         }
         Some(job)
@@ -216,7 +214,7 @@ impl Runner {
             .map_err(|e| format!("could not resolve the run directory: {e}"))?;
 
         let seed = params.stable_seed();
-        let config_path = self.write_config(&id, params, settings, &root).await?;
+        let config_path = self.write_config(&id, params, settings.clone(), &root).await?;
 
         // The run records the integer seed it was actually given, so reproducing
         // it never depends on the text-to-integer mapping staying the same, and
@@ -260,22 +258,13 @@ impl Runner {
             id: id.clone(),
             run_dir: RunDir::new(root),
             steps_total: settings.steps,
-            status: Mutex::new(JobStatus::Queued {
-                position: 0,
-                steps_total: settings.steps,
-            }),
+            status: Mutex::new(JobStatus::queued(0, settings.steps)),
             tx,
             pid: Mutex::new(child.id()),
         });
         self.jobs.lock().await.insert(id.clone(), job.clone());
 
-        job.set_status(JobStatus::Running {
-            stage: "starting".into(),
-            progress: 0.0,
-            step: 0,
-            steps_total: settings.steps,
-        })
-        .await;
+        job.set_status(JobStatus::running("starting", 0.0, 0, settings.steps)).await;
 
         // Supervisor: the process's own outcome.
         let supervised = job.clone();
@@ -289,21 +278,15 @@ impl Runner {
                 // trusting the code alone would report every cancellation as a
                 // completed planet.
                 Ok(s) if s.success() => match supervised.run_dir.status().await {
-                    Some(st) if st.state == "cancelled" => JobStatus::Cancelled {
-                        step: st.last_step.unwrap_or(0), steps_total,
-                    },
-                    _ => JobStatus::Complete {
-                        elapsed_seconds: started.elapsed().as_secs_f64(),
-                        steps_total,
-                    },
+                    Some(st) if st.state == "cancelled" => {
+                        JobStatus::cancelled(st.last_step.unwrap_or(0), steps_total)
+                    }
+                    _ => JobStatus::complete(started.elapsed().as_secs_f64(), steps_total),
                 },
-                Ok(s) => JobStatus::Failed {
-                    code: format!("exit_{}", s.code().unwrap_or(-1)),
-                    steps_total,
-                },
+                Ok(s) => JobStatus::failed(format!("exit_{}", s.code().unwrap_or(-1)), steps_total),
                 Err(e) => {
                     tracing::error!("waiting on the simulation failed: {e}");
-                    JobStatus::Failed { code: "wait_failed".into(), steps_total }
+                    JobStatus::failed("wait_failed", steps_total)
                 }
             };
             supervised.set_status(status).await;
@@ -402,23 +385,18 @@ async fn watch_manifest(job: Arc<Job>) {
         // advance a part at a time: a bar driven by those would jump in
         // `split_every` increments and look stuck in between.
         if let Some(last) = job.run_dir.status().await.and_then(|s| s.last_step) {
-            if matches!(job.status().await, JobStatus::Running { .. }) {
+            if job.status().await.is_running() {
                 let progress = if job.steps_total > 0 {
                     (last as f64 / job.steps_total as f64).clamp(0.0, 1.0)
                 } else {
                     0.0
                 };
-                job.set_status(JobStatus::Running {
-                    stage: "evolving".into(),
-                    progress,
-                    step: last,
-                    steps_total: job.steps_total,
-                })
-                .await;
+                job.set_status(JobStatus::running("evolving", progress, last, job.steps_total)).await;
             }
         }
 
-        if !matches!(job.status().await, JobStatus::Running { .. } | JobStatus::Queued { .. }) {
+        let status = job.status().await;
+        if !(status.is_running() || status.is_queued()) {
             // One last pass has already run above, so anything the writer flushed
             // on its way out has been announced.
             break;

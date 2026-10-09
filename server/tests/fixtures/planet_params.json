@@ -1,0 +1,9 @@
+{
+  "ageGyr": 0.05,
+  "diameterM": 12742000.0,
+  "maxPoints": 500,
+  "name": "Kestrel",
+  "seed": "kestrel-1",
+  "startMantleTemperatureK": 1650.0,
+  "waterGelM": 2700.0
+}

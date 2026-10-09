@@ -7,9 +7,12 @@
 mod api;
 mod launch_config;
 mod runner;
-mod schema;
 mod store;
 mod workers;
+
+// The wire contract lives in the library (`lib.rs`) so `tests/` can reach it;
+// imported here so the modules above keep calling it `crate::schema`.
+use world_building_web_server::{generated, schema};
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -113,7 +116,7 @@ async fn main() {
     };
 
     let app = Router::new()
-        .nest("/api", api::router(state))
+        .nest("/api/v1", api::router(state))
         // The spec is served next to the thing it specifies, so a client can
         // always fetch the contract the running server was built against.
         .route_service("/openapi.yaml", ServeFile::new(env_or("OPENAPI", "api/openapi.yaml")))
@@ -141,7 +144,7 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    tracing::info!("listening on http://{addr}  (spec at /openapi.yaml)");
+    tracing::info!("listening on http://{addr}  (API at /api/v1, spec at /openapi.yaml)");
 
     let server = axum::serve(listener, app);
     if let Err(e) = server

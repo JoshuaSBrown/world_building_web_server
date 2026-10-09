@@ -53,6 +53,6 @@ are generated from it, and the generated code is committed:
 - The server checks every request body against the spec before a handler runs. A
   request that breaks it gets a `422` `application/problem+json` body naming each
   offending field; the browser shows those reasons.
-- `server/tests/golden/` holds the JSON the server sent before generation began, and
+- `server/tests/fixtures/` holds the JSON the server sent before generation began, and
   three real catalogue files; `cargo test` proves the generated types still read and
   write them unchanged.

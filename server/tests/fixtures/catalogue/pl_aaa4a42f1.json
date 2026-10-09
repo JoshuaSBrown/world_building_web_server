@@ -1,0 +1,41 @@
+{
+  "id": "pl_aaa4a42f1",
+  "params": {
+    "name": "Ekren",
+    "seed": "0x0DBF68",
+    "diameterM": 12742000.0,
+    "startMantleTemperatureK": 1780.0,
+    "ageGyr": 3.86,
+    "waterGelM": 2700.0,
+    "maxPoints": 500
+  },
+  "derived": {
+    "radiusM": 6371000.0,
+    "massKg": 6e+24,
+    "surfaceGravity": 9.866014828758892,
+    "escapeVelocityMs": 11212.170215798806,
+    "surfaceAreaM2": 510064471909788.25,
+    "cells": 500,
+    "simCellM": 1010014.3285219158,
+    "reliefM": 1.0
+  },
+  "createdAt": "2026-10-09T12:54:58Z",
+  "jobId": "job_a7052ba60",
+  "runs": [
+    {
+      "kind": "core-surface-formation",
+      "jobId": "job_a7052ba60",
+      "startedAt": "2026-10-09T12:54:58Z",
+      "settings": {
+        "nPoints": 500,
+        "steps": 40,
+        "dtMyr": 8.0,
+        "checkpointEverySteps": 2
+      }
+    }
+  ],
+  "unappliedParams": [
+    "ageGyr",
+    "waterGelM"
+  ]
+}

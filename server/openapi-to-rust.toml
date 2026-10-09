@@ -1,0 +1,28 @@
+# How `scripts/gen-api.sh` turns `api/openapi.yaml` into `src/generated/`.
+#
+# The generator is pinned in that script, not here: this file says WHAT to
+# generate, the script says WITH WHICH VERSION. Never edit `src/generated/` by
+# hand -- change the spec and regenerate.
+
+[generator]
+spec_path = "../api/openapi.yaml"
+output_dir = "src/generated"
+module_name = "api"
+
+# Timestamps stay text. The catalogue stores them as `2026-08-14T20:45:45Z` and
+# relays them unchanged; parsing them into a date type would add `chrono` and a
+# way for a stored planet to stop loading, for nothing the server uses.
+[generator.types]
+date_time = "string"
+unsigned = true
+
+# The server only: no HTTP client is generated.
+[features]
+enable_async_client = false
+
+[http_client.tracing]
+enabled = false
+
+[server]
+framework = "axum"
+operations = ["tag:meta", "tag:planets", "tag:jobs", "tag:exports"]

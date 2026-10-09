@@ -1,0 +1,46 @@
+{
+  "id": "pl_9e4aa2681",
+  "params": {
+    "name": "Layers",
+    "seed": "layers-1",
+    "diameterM": 12742000.0,
+    "startMantleTemperatureK": 1780.0,
+    "ageGyr": 4.54,
+    "waterGelM": 2700.0,
+    "maxPoints": 300
+  },
+  "derived": {
+    "radiusM": 6371000.0,
+    "massKg": 5.97171973257064e+24,
+    "surfaceGravity": 9.81951257245567,
+    "escapeVelocityMs": 11185.71540842293,
+    "surfaceAreaM2": 510064471909788.25,
+    "cells": 300,
+    "simCellM": 1303922.8912654156,
+    "reliefM": 1.0
+  },
+  "createdAt": "2026-08-14T20:45:45Z",
+  "jobId": "job_2cbf4ebb6",
+  "runs": [
+    {
+      "kind": "core-surface-formation",
+      "jobId": "job_65f725d54",
+      "startedAt": "2026-08-15T03:05:29Z"
+    },
+    {
+      "kind": "core-surface-formation",
+      "jobId": "job_2cbf4ebb6",
+      "startedAt": "2026-08-18T03:02:50Z",
+      "settings": {
+        "nPoints": 2400,
+        "steps": 478,
+        "dtMyr": 8.0,
+        "checkpointEverySteps": 2
+      }
+    }
+  ],
+  "unappliedParams": [
+    "ageGyr",
+    "waterGelM"
+  ]
+}

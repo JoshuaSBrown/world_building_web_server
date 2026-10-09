@@ -20,3 +20,19 @@ futures-core = "0.3"
 tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Required by the code generated from api/openapi.yaml (src/generated/), exactly
+# as the generator's REQUIRED_DEPS.toml lists them. The server compiles the
+# generated routing and request checks, so these are no longer optional:
+#   async-trait        the per-tag traits api.rs implements
+#   bytes              the zip download's body
+#   http-body-util     reading a request body before it is checked
+#   jsonschema         checking a request against the spec's schemas
+#   mime, serde_urlencoded, url   content types, query strings
+async-trait = "0.1"
+bytes = { version = "1", features = ["serde"] }
+http-body-util = "0.1"
+jsonschema = { version = "0.49", default-features = false }
+mime = "0.3"
+serde_urlencoded = "0.7"
+url = "2"
