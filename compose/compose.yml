@@ -2,7 +2,7 @@
 #
 #     docker compose -f web_server/compose/compose.yml up -d --build
 #     open http://localhost:5173          # the display
-#     open http://localhost:8080/api/health
+#     open http://localhost:8080/api/v1/health
 #
 # Three services: the Rust server, Vite serving the browser, and Postgres.
 #
@@ -66,7 +66,7 @@ services:
       # python rather than curl: the image has an interpreter and no curl, and
       # adding one to check on a server that ships with Python is silly
       test: ["CMD", "python3", "-c",
-             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health')"]
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/v1/health')"]
       interval: 10s
       timeout: 5s
       retries: 12
