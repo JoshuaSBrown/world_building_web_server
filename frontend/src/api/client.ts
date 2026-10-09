@@ -1,5 +1,6 @@
 import type {
-  ExportSpec, Frame, JobStatus, PatchSpec, PlanetParams, PlanetSummary, RunSettings,
+  ExportSpec, Frame, JobStatus, PatchSpec, PlanetParams, PlanetSummary, Problem, RunSettings,
+  ServerError,
 } from "./types";
 
 /**
@@ -10,7 +11,7 @@ import type {
  * carrying data. The server never pushes a payload — `eventsUrl` yields
  * "step N landed" and the caller decides whether it still wants step N.
  */
-const BASE = import.meta.env.VITE_API_BASE ?? "/api";
+const BASE = import.meta.env.VITE_API_BASE ?? "/api/v1";
 
 /** The MAJOR the client understands. Anything else is refused, not half-drawn. */
 export const SCHEMA_MAJOR = 1;
@@ -22,6 +23,35 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The error for a response that was not OK, carrying the server's own reason.
+ *
+ * Two shapes come back, both from the spec: a request the generated checks
+ * refused before any handler ran is `application/problem+json` (`Problem`), with
+ * one entry per offending field — `maxPoints is outside the allowed range`;
+ * anything a handler refused is `Error`, whose `message` is written for a user.
+ * A body that is neither still reports the status, never an invented reason.
+ */
+async function failure(res: Response, path: string): Promise<ApiError> {
+  const fallback = `${res.status} ${res.statusText} — ${path}`;
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    return new ApiError(fallback, res.status);
+  }
+  const type = res.headers.get("content-type") ?? "";
+  if (type.includes("application/problem+json")) {
+    const problem = body as Problem;
+    // `/body/maxPoints` → `maxPoints`: the field's name as the form knows it.
+    const fields = (problem.errors ?? []).map(e =>
+      `${e.location.replace(/^\/body\//, "") || "request"} ${e.message}`);
+    return new ApiError(fields.length > 0 ? fields.join("; ") : problem.title, res.status);
+  }
+  const error = body as Partial<ServerError>;
+  return new ApiError(typeof error.message === "string" ? error.message : fallback, res.status);
+}
+
 async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   let res: Response;
   try {
@@ -29,7 +59,7 @@ async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   } catch {
     throw new ApiError(`No response from the server at ${BASE}. Is it running?`, 0);
   }
-  if (!res.ok) throw new ApiError(`${res.status} ${res.statusText} — ${path}`, res.status);
+  if (!res.ok) throw await failure(res, path);
   return (await res.json()) as T;
 }
 
@@ -44,7 +74,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   } catch {
     throw new ApiError(`No response from the server at ${BASE}. Is it running?`, 0);
   }
-  if (!res.ok) throw new ApiError(`${res.status} ${res.statusText} — ${path}`, res.status);
+  if (!res.ok) throw await failure(res, path);
   return (await res.json()) as T;
 }
 
@@ -55,7 +85,7 @@ async function del(path: string): Promise<void> {
   } catch {
     throw new ApiError(`No response from the server at ${BASE}. Is it running?`, 0);
   }
-  if (!res.ok) throw new ApiError(`${res.status} ${res.statusText} — ${path}`, res.status);
+  if (!res.ok) throw await failure(res, path);
 }
 
 export const api = {
