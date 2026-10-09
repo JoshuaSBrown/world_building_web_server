@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: PhysicsBasedWorldBuilder — display API
-  version: 1.0.0
+  version: 2.0.0
   description: |
     The HTTP surface between the browser and a simulation run.
 
@@ -12,6 +12,19 @@ info:
     field) is routine; changing the meaning, shape or units of something that
     already exists is a MAJOR change, because it breaks a client this repo cannot
     see.
+
+    **The code is generated from this file.** The server's wire types and routing
+    come from `openapi-to-rust` and the client's types from `openapi-typescript`, so a
+    disagreement is a build failure rather than a bug found in a browser. Request
+    bodies are checked against the schemas below before a handler runs.
+
+    **2.0.0** — two breaking changes, made when the code began to be generated from
+    this file: every path is served under `/api/v1` (1.x said so here, but the server
+    and client used `/api`), and a request body that breaks a schema is refused with
+    `application/problem+json` (RFC 9457, the `Problem` schema) instead of the `Error` shape. The spec also
+    gained what the server already sent but 1.0.0 never described: the `cancelled`
+    job state, `Health.runDefaults`, `RunRef.settings`, the optional run settings, and
+    the 404/500/503 responses below.
 
     **Two channels, deliberately.** `/jobs/{jobId}/events` carries *notifications*
     only — "status changed", "step N landed" — and never a payload. Data comes
@@ -40,6 +53,7 @@ tags:
 paths:
   /health:
     get:
+      operationId: health
       tags: [meta]
       summary: Liveness, and what this server can currently do.
       responses:
@@ -51,6 +65,7 @@ paths:
 
   /planets:
     get:
+      operationId: listPlanets
       tags: [planets]
       summary: Every planet in the catalogue, newest first.
       responses:
@@ -62,6 +77,7 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/PlanetSummary" }
     post:
+      operationId: createPlanet
       tags: [planets]
       summary: Create a planet and start the run that solves its field.
       description: |
@@ -111,6 +127,13 @@ paths:
         "422":
           description: A parameter is outside the range the simulation accepts.
           content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "500":
+          description: |
+            The run started but the planet could not be saved, or the server's own
+            run defaults are outside the accepted ranges.
+          content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "503":
@@ -121,6 +144,7 @@ paths:
 
   /planets/{planetId}:
     get:
+      operationId: getPlanet
       tags: [planets]
       summary: One planet.
       parameters:
@@ -139,6 +163,7 @@ paths:
 
   /planets/{planetId}/runs:
     post:
+      operationId: startRun
       tags: [planets]
       summary: Start one simulation for a planet that already exists.
       description: |
@@ -155,13 +180,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [kind]
-              properties:
-                kind:
-                  type: string
-                  description: The simulation to run, e.g. `core-surface-formation`.
+            schema: { $ref: "#/components/schemas/RunRequest" }
       responses:
         "202":
           description: Accepted; the run has been started.
@@ -179,7 +198,16 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "422":
-          description: This server cannot run that simulation.
+          description: |
+            This server cannot run that simulation, or a setting is outside the
+            range a run accepts.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
+        "500":
+          description: |
+            The run could not be recorded against the planet, or the server's own
+            run defaults are outside the accepted ranges.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -191,6 +219,7 @@ paths:
 
   /jobs/{jobId}:
     get:
+      operationId: jobStatus
       tags: [jobs]
       summary: The run's current status.
       parameters:
@@ -207,6 +236,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
     delete:
+      operationId: stopJob
       tags: [jobs]
       summary: Stop the run.
       description: |
@@ -226,6 +256,7 @@ paths:
 
   /jobs/{jobId}/events:
     get:
+      operationId: jobEvents
       tags: [jobs]
       summary: Server-Sent Events — notifications only, never payloads.
       description: |
@@ -262,6 +293,7 @@ paths:
 
   /jobs/{jobId}/steps:
     get:
+      operationId: jobSteps
       tags: [jobs]
       summary: Which steps are readable right now.
       parameters:
@@ -277,11 +309,17 @@ paths:
                 properties:
                   steps:
                     type: array
-                    items: { type: integer }
+                    items: { type: integer, format: uint64 }
                     description: Recorded steps whose part file is closed.
+        "404":
+          description: No such job.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /jobs/{jobId}/steps/{step}/cloud:
     get:
+      operationId: stepCloud
       tags: [jobs]
       summary: One recorded step's surface field.
       description: |
@@ -293,7 +331,7 @@ paths:
         - name: step
           in: path
           required: true
-          schema: { type: integer }
+          schema: { type: integer, format: uint64 }
         - name: fields
           in: query
           required: false
@@ -326,9 +364,15 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: The step's file could not be read.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /exports:
     post:
+      operationId: startExport
       tags: [exports]
       summary: Start baking a patch into a heightmap.
       requestBody:
@@ -352,6 +396,11 @@ paths:
                 required: [id]
                 properties:
                   id: { type: string }
+        "422":
+          description: The request body does not match the schema.
+          content:
+            application/problem+json:
+              schema: { $ref: "#/components/schemas/Problem" }
         "501":
           description: |
             No exporter is wired up yet. Reported rather than returning an archive
@@ -362,6 +411,7 @@ paths:
 
   /exports/{exportId}:
     get:
+      operationId: exportStatus
       tags: [exports]
       summary: Progress of a bake. Polled, not streamed.
       parameters:
@@ -380,6 +430,7 @@ paths:
 
   /exports/{exportId}/archive:
     get:
+      operationId: exportArchive
       tags: [exports]
       summary: Download a finished bake.
       parameters:
@@ -427,17 +478,103 @@ components:
           type: string
           description: What went wrong, in a sentence a user can act on.
 
+    Problem:
+      type: object
+      description: |
+        A request that breaks a schema in this file, refused before any handler runs
+        (RFC 9457 Problem Details, as `openapi-to-rust` emits it). Each entry in
+        `errors` names the offending field by JSON pointer (`location`, e.g.
+        `/body/maxPoints`) and says what is wrong with it (`message`).
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string, example: request_validation_failed }
+        errors:
+          type: array
+          items:
+            type: object
+            required: [code, location, message]
+            properties:
+              code: { type: string, example: maximum }
+              location: { type: string, example: /body/maxPoints }
+              message: { type: string, example: is outside the allowed range }
+
     Health:
       type: object
-      required: [status, schemaMajor, exporter]
+      required: [status, schemaMajor, exporter, runDefaults]
       properties:
         status: { type: string, enum: [ok] }
         schemaMajor:
           type: integer
+          format: uint32
           description: The run-format MAJOR this server can read.
         exporter:
           type: boolean
           description: Whether heightmap export is wired up.
+        runDefaults:
+          $ref: "#/components/schemas/RunSettings"
+          description: |
+            What a run is started with unless the request says otherwise. Sent so a
+            form can show real defaults instead of a copy that drifts from them.
+
+    RunSettings:
+      type: object
+      description: |
+        The numerical choices one run was made with — class (b) every one: a
+        resolution, a step size, a cadence. They belong to the RUN, not the planet.
+      required: [nPoints, steps, dtMyr, checkpointEverySteps]
+      properties:
+        nPoints:
+          type: integer
+          format: uint32
+          minimum: 100
+          maximum: 10000
+          description: Points the surface cloud starts with.
+        steps: { type: integer, format: uint64, minimum: 1, maximum: 100000 }
+        dtMyr:
+          type: number
+          exclusiveMinimum: 0
+          description: Millions of years per step.
+        checkpointEverySteps:
+          type: integer
+          format: uint32
+          minimum: 0
+          maximum: 10000
+          description: Steps between checkpoints; also how far behind the live view runs.
+
+    RunRequest:
+      type: object
+      description: |
+        Which simulation to run, and any settings to override. Every setting is
+        optional and falls back to the server's default (`Health.runDefaults`).
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [core-surface-formation]
+          description: |
+            The simulation to run. Only simulations this server can actually start
+            are listed; any other is refused rather than queued.
+        nPoints: { type: integer, format: uint32, minimum: 100, maximum: 10000 }
+        steps: { type: integer, format: uint64, minimum: 1, maximum: 100000 }
+        dtMyr: { type: number, exclusiveMinimum: 0 }
+        checkpointEverySteps: { type: integer, format: uint32, minimum: 0, maximum: 10000 }
+
+    RunRef:
+      type: object
+      description: One simulation that has been run for a planet.
+      required: [kind, jobId, startedAt]
+      properties:
+        kind: { type: string, example: core-surface-formation }
+        jobId: { type: string }
+        startedAt: { type: string }
+        settings:
+          $ref: "#/components/schemas/RunSettings"
+          description: |
+            What it was run with. Absent on runs recorded before settings were
+            carried — reported as unknown rather than back-filled with today's.
 
     PlanetParams:
       type: object
@@ -445,16 +582,20 @@ components:
       required: [name, seed, diameterM, startMantleTemperatureK, ageGyr, waterGelM,
                  maxPoints]
       properties:
-        name: { type: string }
+        name:
+          type: string
+          pattern: '\S'
+          description: Must contain at least one non-space character.
         seed:
           type: string
           description: |
             Free text. The server maps it to the simulation's integer seed by a
             stable hash and records the integer it used, so a run is reproducible
             from what is stored rather than from this string alone.
-        diameterM: { type: number, description: "m" }
+        diameterM: { type: number, exclusiveMinimum: 0, description: "m" }
         startMantleTemperatureK:
           type: number
+          exclusiveMinimum: 0
           description: |
             K. The temperature the mantle STARTS from -- the post-magma-ocean
             initial condition of the two-layer energy balance, written to the
@@ -464,10 +605,11 @@ components:
             present-day temperature a run evolves to. That has no key in the
             launch config, because setting it would be fixing a result, so the
             old field could never take effect however it was wired.
-        ageGyr: { type: number, description: "Gyr at which the run starts" }
+        ageGyr: { type: number, minimum: 0, description: "Gyr at which the run starts" }
         waterGelM: { type: number, description: "m of global equivalent layer" }
         maxPoints:
           type: integer
+          format: uint32
           minimum: 100
           maximum: 10000
           description: |
@@ -487,7 +629,7 @@ components:
         surfaceGravity: { type: number, description: "m/s^2" }
         escapeVelocityMs: { type: number }
         surfaceAreaM2: { type: number }
-        cells: { type: integer, description: "Points in the cloud; each owns a Voronoi cell." }
+        cells: { type: integer, format: uint64, description: "Points in the cloud; each owns a Voronoi cell." }
         simCellM:
           type: number
           description: Centre-to-centre cell spacing; nothing smaller was simulated.
@@ -516,13 +658,7 @@ components:
             consume what earlier ones wrote. This is what a chooser reads to know
             whether a simulation's inputs exist — the answer is a run directory
             on disk, never an assumption.
-          items:
-            type: object
-            required: [kind, jobId, startedAt]
-            properties:
-              kind: { type: string, example: core-surface-formation }
-              jobId: { type: string }
-              startedAt: { type: string }
+          items: { $ref: "#/components/schemas/RunRef" }
         unappliedParams:
           type: array
           items: { type: string }
@@ -539,44 +675,75 @@ components:
         of remembering the last value it happened to see, which also means a
         display can still say "40 of 40" after the run is over.
       oneOf:
-        - type: object
-          required: [state, position, stepsTotal]
-          properties:
-            state: { type: string, enum: [queued] }
-            position: { type: integer }
-            stepsTotal: { type: integer }
-        - type: object
-          required: [state, stage, progress, step, stepsTotal]
-          properties:
-            state: { type: string, enum: [running] }
-            stage: { type: string }
-            progress: { type: number, minimum: 0, maximum: 1 }
-            step:
-              type: integer
-              description: |
-                The last iteration the run has recorded, as the run itself
-                reports it. Counted from 1; 0 means nothing recorded yet.
-            stepsTotal: { type: integer }
-        - type: object
-          required: [state, elapsedSeconds, stepsTotal]
-          properties:
-            state: { type: string, enum: [complete] }
-            elapsedSeconds: { type: number }
-            stepsTotal: { type: integer }
-        - type: object
-          required: [state, code, stepsTotal]
-          properties:
-            state: { type: string, enum: [failed] }
-            code: { type: string }
-            stepsTotal: { type: integer }
+        - $ref: "#/components/schemas/JobQueued"
+        - $ref: "#/components/schemas/JobRunning"
+        - $ref: "#/components/schemas/JobComplete"
+        - $ref: "#/components/schemas/JobFailed"
+        - $ref: "#/components/schemas/JobCancelled"
       discriminator:
         propertyName: state
+        mapping:
+          queued: "#/components/schemas/JobQueued"
+          running: "#/components/schemas/JobRunning"
+          complete: "#/components/schemas/JobComplete"
+          failed: "#/components/schemas/JobFailed"
+          cancelled: "#/components/schemas/JobCancelled"
+
+    JobQueued:
+      type: object
+      required: [state, position, stepsTotal]
+      properties:
+        state: { type: string, const: queued }
+        position: { type: integer, format: uint32 }
+        stepsTotal: { type: integer, format: uint64 }
+
+    JobRunning:
+      type: object
+      required: [state, stage, progress, step, stepsTotal]
+      properties:
+        state: { type: string, const: running }
+        stage: { type: string }
+        progress: { type: number, minimum: 0, maximum: 1 }
+        step:
+          type: integer
+          format: uint64
+          description: |
+            The last iteration the run has recorded, as the run itself
+            reports it. Counted from 1; 0 means nothing recorded yet.
+        stepsTotal: { type: integer, format: uint64 }
+
+    JobComplete:
+      type: object
+      required: [state, elapsedSeconds, stepsTotal]
+      properties:
+        state: { type: string, const: complete }
+        elapsedSeconds: { type: number }
+        stepsTotal: { type: integer, format: uint64 }
+
+    JobFailed:
+      type: object
+      required: [state, code, stepsTotal]
+      properties:
+        state: { type: string, const: failed }
+        code: { type: string }
+        stepsTotal: { type: integer, format: uint64 }
+
+    JobCancelled:
+      type: object
+      description: |
+        Stopped on purpose — NOT a failure and NOT a completion. `step` is how
+        far it got, the one number a user wants after stopping it.
+      required: [state, step, stepsTotal]
+      properties:
+        state: { type: string, const: cancelled }
+        step: { type: integer, format: uint64 }
+        stepsTotal: { type: integer, format: uint64 }
 
     CloudFrame:
       type: object
       required: [step, t, elevation, seaLevel, schemaMajor]
       properties:
-        step: { type: integer }
+        step: { type: integer, format: uint64 }
         t:
           type: number
           description: Fraction of the run's simulated span, 0–1.
@@ -592,6 +759,7 @@ components:
             absent; the client draws it as missing rather than as zero.
         schemaMajor:
           type: integer
+          format: uint32
           description: The run format's MAJOR. A client refusing to match must not draw.
         timeMyr:
           type: number
@@ -607,18 +775,7 @@ components:
             The four attributes are relayed exactly as the file declares them and
             are never invented here. `units: ""` means the run declared none, and
             a client reports that rather than filling one in.
-          additionalProperties:
-            type: object
-            required: [values, units, kind, domain, longName]
-            properties:
-              values:
-                description: |
-                  One entry per element of `domain`. A `scalar` or `category`
-                  field is a flat array; a `vector` field is a row per element.
-              units: { type: string }
-              kind: { type: string, enum: [scalar, vector, category] }
-              domain: { type: string }
-              longName: { type: string }
+          additionalProperties: { $ref: "#/components/schemas/FieldData" }
         domains:
           type: object
           description: |
@@ -629,16 +786,7 @@ components:
             other's.** The cloud creates and consumes points every step, so a
             field computed before that happens is not co-indexed with
             `cloud/pos` even on the steps where the lengths agree.
-          additionalProperties:
-            type: object
-            required: [pos]
-            properties:
-              pos:
-                type: array
-                description: Unit vectors, one row per element.
-                items:
-                  type: array
-                  items: { type: number }
+          additionalProperties: { $ref: "#/components/schemas/DomainPositions" }
         available:
           type: array
           items: { type: string }
@@ -658,6 +806,32 @@ components:
             Requested names the run did not record. Reported so a client can say
             a layer is unavailable instead of drawing zeros for it.
 
+    FieldData:
+      type: object
+      description: One field of one recorded step, with what the run file says about it.
+      required: [values, units, kind, domain, longName]
+      properties:
+        values:
+          description: |
+            One entry per element of `domain`. A `scalar` or `category`
+            field is a flat array; a `vector` field is a row per element.
+        units: { type: string }
+        kind: { type: string, enum: [scalar, vector, category] }
+        domain: { type: string }
+        longName: { type: string }
+
+    DomainPositions:
+      type: object
+      description: Where the elements of one domain sit on the sphere.
+      required: [pos]
+      properties:
+        pos:
+          type: array
+          description: Unit vectors, one row per element.
+          items:
+            type: array
+            items: { type: number }
+
     PatchSpec:
       type: object
       required: [centreLat, centreLon, widthM, heightM, bearingDeg, scaleError]
@@ -676,7 +850,7 @@ components:
       required: [engine, resolution, tiles, detailOctaves, atTime]
       properties:
         engine: { type: string, enum: [unity, unreal, generic] }
-        resolution: { type: integer }
-        tiles: { type: integer }
-        detailOctaves: { type: integer }
+        resolution: { type: integer, format: uint32 }
+        tiles: { type: integer, format: uint32 }
+        detailOctaves: { type: integer, format: uint32 }
         atTime: { type: number }
