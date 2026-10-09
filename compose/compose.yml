@@ -1,0 +1,119 @@
+# The application's compose stack (REQ-D02).
+#
+#     docker compose -f web_server/compose/compose.yml up -d --build
+#     open http://localhost:5173          # the display
+#     open http://localhost:8080/api/health
+#
+# Three services: the Rust server, Vite serving the browser, and Postgres.
+#
+# Postgres is web-service-internal state only: the planet catalogue, job
+# records, export jobs. It is never part of the simulation boundary — the run
+# directory remains the whole interface to PlanetBuilder (docs/05).
+#
+# Temporal was removed (REQ-D01): explored for saga handling, judged overkill.
+# Job supervision is the server's runner plus status.json; durable state is
+# this database.
+#
+# **The stack reaches outside this repo, and has to.** `PlanetBuilder` and
+# `planet_run_schema` are mounted from the superproject checkout beside it: a run
+# is a subprocess of the server, and the schema is the contract its config is
+# checked against. That makes this file usable only from inside the superproject,
+# which is where the wiring belongs.
+#
+# **The simulation's Python is the server's own image**, not a service. The HDF5
+# worker pool and `evolve.py` are child processes of the server container, so
+# they are packaged with it; a separate service would need a network protocol
+# where a pipe already does.
+#
+# **`runs/` and `configs/` are host directories, not named volumes**, because
+# looking at what a run wrote is the point of this project and `docker volume
+# inspect` is a poor way to do it.
+
+name: world-builder
+
+services:
+
+  server:
+    build:
+      # the superproject root: the image needs PlanetBuilder's pinned
+      # requirements, so that the container's Python is the environment a run is
+      # reproducible in
+      context: ../..
+      dockerfile: web_server/server/docker/Dockerfile
+    environment:
+      # A run is `STEPS` iterations of `DT_MYR`, checkpointing every
+      # `SPLIT_EVERY`. These are the config's `steps`, `dt_myr` and
+      # `checkpoint_every_steps`; the server writes them into every launch config
+      # it generates. Small by default so the stack shows a finished planet
+      # quickly rather than a bar that moves for an hour.
+      STEPS: ${STEPS:-40}
+      DT_MYR: ${DT_MYR:-8.0}
+      SPLIT_EVERY: ${SPLIT_EVERY:-2}
+      WORKERS: ${WORKERS:-4}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      # read-only: the server starts these, it does not edit them
+      - ../../PlanetBuilder:/app/PlanetBuilder:ro
+      - ../../planet_run_schema:/app/planet_run_schema:ro
+      - ../scripts:/app/web_server/scripts:ro
+      - ../api:/app/web_server/api:ro
+      # what a run produces, and what it was launched from
+      - ../runs:/app/web_server/runs
+      - ../configs:/app/web_server/configs
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    healthcheck:
+      # python rather than curl: the image has an interpreter and no curl, and
+      # adding one to check on a server that ships with Python is silly
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - world-builder
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: frontend/docker/Dockerfile
+    environment:
+      # Vite proxies /api to the server over the compose network, so the browser
+      # sees one origin and the client never carries an absolute URL.
+      VITE_API_TARGET: http://server:8080
+    volumes:
+      # live edit; node_modules deliberately NOT mounted over
+      - ../frontend/src:/app/frontend/src:ro
+      - ../frontend/index.html:/app/frontend/index.html:ro
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    depends_on:
+      - server
+    networks:
+      - world-builder
+
+  postgresql:
+    build:
+      context: ../postgres/docker
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-worldbuilder}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-worldbuilder} -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks:
+      - world-builder
+
+networks:
+  world-builder:
+    driver: bridge
+
+volumes:
+  pgdata:
