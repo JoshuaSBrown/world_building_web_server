@@ -72,7 +72,7 @@ src/
     icosphere.ts         topology only (positions, not physics)
 
 tests/
-  lib/lib.test.ts        the provable parts of src/lib/
+  lib/<name>.test.ts     the provable parts of src/lib/<name>.ts, one file each
   fixtures/step.json     a step PlanetBuilder really wrote (golden fixture)
 ```
 
@@ -153,7 +153,7 @@ npm run build        # clean
 subdivision, where an out-of-range index would otherwise become a silent `NaN`
 in a vertex buffer.
 
-`tests/lib/lib.test.ts` covers the parts of `src/lib/` that are provable rather than visual:
+`tests/lib/` covers the parts of `src/lib/` that are provable rather than visual:
 ramp clamping (including `NaN`, which is how "not recorded" reaches a colour
 function), timeline bands tiling [0, 1] with no gap or overlap, and icosphere
 topology — closed manifold (every edge in exactly two faces), Euler
