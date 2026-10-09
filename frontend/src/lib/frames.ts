@@ -27,7 +27,7 @@ export function unavailableBecause(layer: LayerDef<BaseLayerId>, frame: Frame | 
   if (layer.needsSeaLevel && frame.seaLevel === null) {
     return "this run records no sea level — it carries no water inventory";
   }
-  if (!frame.available.includes(layer.dataset)) {
+  if (!(frame.available ?? []).includes(layer.dataset)) {
     return `this run did not record ${layer.dataset}`;
   }
   return null;
@@ -177,17 +177,17 @@ export function sampleFrame(
   const layer = BASE_LAYERS.find(l => l.id === layerId);
   if (!layer) return null;
 
-  const elevationField = frame.fields["elevation"];
-  const cloud = frame.domains["cloud"];
+  const elevationField = frame.fields?.["elevation"];
+  const cloud = frame.domains?.["cloud"];
   if (!elevationField || !cloud) return null;
 
   const cloudMap = mapFor(cache, `cloud:${frame.step}`, vertices, cloud.pos);
   const elevation = spread(elevationField.values as number[], cloudMap);
 
-  const field = frame.fields[layer.dataset];
+  const field = frame.fields?.[layer.dataset];
   if (!field) return null;
 
-  const domain = frame.domains[field.domain];
+  const domain = frame.domains?.[field.domain];
   const map = field.domain === "cloud"
     ? cloudMap
     : domain
@@ -195,7 +195,7 @@ export function sampleFrame(
       : null;
   if (!map) return null;
 
-  const raw = reduceValues(field.values, layer.reduce);
+  const raw = reduceValues(field.values as number[] | number[][], layer.reduce);
   const values = spread(raw, map);
   const [lo, hi] = limits(raw);
   const scale: Scale = held ?? { min: lo, max: hi, units: field.units, mode: "auto" };
@@ -231,8 +231,8 @@ export function sampleFrame(
 export function cloudSites(
   frame: Frame | null,
 ): { pos: Float32Array; elevation: Float32Array } | null {
-  const cloud = frame?.domains["cloud"];
-  const field = frame?.fields["elevation"];
+  const cloud = frame?.domains?.["cloud"];
+  const field = frame?.fields?.["elevation"];
   if (!cloud || !field) return null;
   const rows = cloud.pos;
   const pos = new Float32Array(rows.length * 3);
@@ -275,9 +275,9 @@ export function boundarySegments(frame: Frame | null): {
   /** Labels this display has no colour for. Drawn, but reported. */
   unknown: string[];
 } | null {
-  const starts = frame?.fields["boundary_edges/start"];
-  const ends = frame?.fields["boundary_edges/end"];
-  const classes = frame?.fields["boundary_edges/label"];
+  const starts = frame?.fields?.["boundary_edges/start"];
+  const ends = frame?.fields?.["boundary_edges/end"];
+  const classes = frame?.fields?.["boundary_edges/label"];
   if (!starts || !ends || !classes) return null;
 
   const a = starts.values as number[][];
@@ -363,8 +363,8 @@ export function plateArrows(frame: Frame | null): {
   fastest: number;
   plates: number;
 } | null {
-  const velocity = frame?.fields["plates/velocity"];
-  const home = frame?.domains["plates"];
+  const velocity = frame?.fields?.["plates/velocity"];
+  const home = frame?.domains?.["plates"];
   if (!velocity || !home) return null;
 
   const v = velocity.values as number[][];

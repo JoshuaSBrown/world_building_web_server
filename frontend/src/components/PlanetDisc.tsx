@@ -28,8 +28,8 @@ export function PlanetDisc(props: { jobId: string | null; name: string }) {
         const last = steps[steps.length - 1];
         if (last === undefined) return;
         const frame = await api.step(jobId, last, ["elevation"], ctrl.signal);
-        const cloud = frame.domains["cloud"];
-        const elevation = frame.fields["elevation"];
+        const cloud = frame.domains?.["cloud"];
+        const elevation = frame.fields?.["elevation"];
         if (!live || !cloud || !elevation) return;
 
         const pixels = renderDisc(DISC_SIZE, cloud.pos, elevation.values as number[]);

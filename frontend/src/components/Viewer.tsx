@@ -118,7 +118,7 @@ export function Viewer(props: {
 
   const sampled = useMemo(() => {
     if (!frame) return null;
-    const elevation = frame.fields["elevation"];
+    const elevation = frame.fields?.["elevation"];
     const shown = edited && elevation
       // The edit is applied to the run's own cells before sampling, so what is
       // on screen is the recorded field plus a delta labelled as art.
@@ -263,7 +263,7 @@ export function Viewer(props: {
     const x = geo.vertices[j]!, y = geo.vertices[j + 1]!, z = geo.vertices[j + 2]!;
 
     if (props.mode === "edit") {
-      const pos = frame.domains["cloud"]?.pos;
+      const pos = frame.domains?.["cloud"]?.pos;
       if (!pos) return;
       setDelta(d => paintDelta(
         d, pos, [x, y, z],
@@ -339,7 +339,7 @@ export function Viewer(props: {
           // Nothing is drawn for this layer yet. Said out loud, because the
           // globe still carries the last layer's colours and a viewer that
           // does not say so is showing one layer under another's name.
-          pending={sampled === null || frame?.fields[layer.dataset] === undefined}
+          pending={sampled === null || frame?.fields?.[layer.dataset] === undefined}
           unavailable={unavailable}
           boundaryLabels={boundaries?.labels ?? null}
           boundaryUnknown={boundaries?.unknown ?? []}

@@ -76,8 +76,8 @@ export function MapView(props: {
    * smooth-looking map would be showing terrain nothing computed.
    */
   const compute = useCallback(() => {
-    const cloud = frame?.domains["cloud"];
-    const elevation = frame?.fields["elevation"];
+    const cloud = frame?.domains?.["cloud"];
+    const elevation = frame?.fields?.["elevation"];
     if (!frame || !cloud || !elevation) return;
     const ar = props.patch.widthM / props.patch.heightM;
     const w = ar >= 1 ? PREVIEW_MAX : Math.max(16, Math.round(PREVIEW_MAX * ar));
