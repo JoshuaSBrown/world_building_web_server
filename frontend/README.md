@@ -70,7 +70,10 @@ src/
     colour.ts            ramps, layer defs, legend text
     stages.ts            timeline bands
     icosphere.ts         topology only (positions, not physics)
-    lib.test.ts          the provable parts of lib/
+
+tests/
+  lib/lib.test.ts        the provable parts of src/lib/
+  fixtures/step.json     a step PlanetBuilder really wrote (golden fixture)
 ```
 
 ## Decisions
@@ -150,7 +153,7 @@ npm run build        # clean
 subdivision, where an out-of-range index would otherwise become a silent `NaN`
 in a vertex buffer.
 
-`lib.test.ts` covers the parts of `lib/` that are provable rather than visual:
+`tests/lib/lib.test.ts` covers the parts of `src/lib/` that are provable rather than visual:
 ramp clamping (including `NaN`, which is how "not recorded" reaches a colour
 function), timeline bands tiling [0, 1] with no gap or overlap, and icosphere
 topology — closed manifold (every edge in exactly two faces), Euler

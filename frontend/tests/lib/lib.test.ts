@@ -1,20 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ramp, RAMPS } from "./colour.ts";
-import { icosphere } from "./icosphere.ts";
-import { fractionOf, SIMULATIONS, stepAt, underway } from "./simulations.ts";
+import { ramp, RAMPS } from "../../src/lib/colour.ts";
+import { icosphere } from "../../src/lib/icosphere.ts";
+import { fractionOf, SIMULATIONS, stepAt, underway } from "../../src/lib/simulations.ts";
 
-import { displayLevelFor, nearestMap, verticesAt } from "./nearest.ts";
-import { boundsOf, patchFromCorners, sampleGrid, toLatLon, toVector, wrapLon } from "./patch.ts";
-import { DISC_SIZE, renderDisc } from "./disc.ts";
-import { INITIAL_PHI, INITIAL_PITCH, INITIAL_THETA, INITIAL_YAW } from "./view.ts";
-import { EMPTY_DELTA, paintDelta, summarise, withDelta } from "./edits.ts";
-import { BASE_LAYERS, BOUNDARY_COLOURS, BOUNDARY_ORDER } from "./colour.ts";
+import { displayLevelFor, nearestMap, verticesAt } from "../../src/lib/nearest.ts";
+import { boundsOf, patchFromCorners, sampleGrid, toLatLon, toVector, wrapLon } from "../../src/lib/patch.ts";
+import { DISC_SIZE, renderDisc } from "../../src/lib/disc.ts";
+import { INITIAL_PHI, INITIAL_PITCH, INITIAL_THETA, INITIAL_YAW } from "../../src/lib/view.ts";
+import { EMPTY_DELTA, paintDelta, summarise, withDelta } from "../../src/lib/edits.ts";
+import { BASE_LAYERS, BOUNDARY_COLOURS, BOUNDARY_ORDER } from "../../src/lib/colour.ts";
 import {
   boundarySegments, cloudSites, plateArrows, sampleFrame, unavailableBecause,
-} from "./frames.ts";
+} from "../../src/lib/frames.ts";
 import { readFileSync } from "node:fs";
-import type { Frame } from "../api/types.ts";
+import type { Frame } from "../../src/api/types.ts";
 
 /**
  * The three things in `lib/` that are provable rather than visual.
@@ -166,7 +166,7 @@ test("strokes accumulate and cancel exactly", () => {
  * format fails here rather than in a browser.
  */
 const FIXTURE = JSON.parse(
-  readFileSync(new URL("./fixtures/step.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../fixtures/step.json", import.meta.url), "utf8"),
 ) as Frame;
 
 test("every layer either samples a real field or says why it cannot", () => {
