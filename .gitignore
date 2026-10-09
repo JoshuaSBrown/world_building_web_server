@@ -1,6 +1,8 @@
 # Rust build output
 /target
 /server/target
+# the pinned API generator, installed by server/scripts/gen-api.sh
+/server/.tools
 
 # Run directories: simulation output, not source. Every byte in here is
 # reproducible from a seed and a config.
