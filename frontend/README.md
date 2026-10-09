@@ -1,6 +1,6 @@
 # Orrery — web client
 
-React + TypeScript. Four screens: catalogue, create, viewer, map view.
+React + TypeScript. Screens: catalogue, create, planet, viewer, map view.
 
 Read `web_server/CLAUDE.md` first, then the superproject's. The one rule that
 shapes every file here: **this repo derives nothing.** Every number on screen
@@ -24,7 +24,7 @@ every quantity reading "not recorded". That is the intended state — the
 alternative is inventing a planet, which is the one thing this repo forbids.
 
 Everything that does not need the server is live: the creation form and its
-derived column, all four routes, globe orbit / zoom / pick, layer and overlay
+derived column, every route, globe orbit / zoom / pick, layer and overlay
 toggles, the timeline bands, and the export panel's engine tables.
 
 `vite.config.ts` proxies `/api` to `http://127.0.0.1:8080`. Point it elsewhere
@@ -62,7 +62,7 @@ src/
     useExportJob.ts         polled export job
 
   state/
-    useRouter.ts         four routes, no library
+    useRouter.ts         the routes, kept in the URL hash
     useViewerState.ts    reducer: layers, exaggeration, time, sheet
     regionStore.ts       patch + export config + client-side validation
 
