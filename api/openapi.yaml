@@ -1,0 +1,682 @@
+openapi: 3.1.0
+
+info:
+  title: PhysicsBasedWorldBuilder — display API
+  version: 1.0.0
+  description: |
+    The HTTP surface between the browser and a simulation run.
+
+    **This spec is the contract, and it is written first.** The Rust server and the
+    TypeScript client are both implementations of it; when they disagree, this file
+    is right and the code is wrong. Extending it (a new endpoint, a new optional
+    field) is routine; changing the meaning, shape or units of something that
+    already exists is a MAJOR change, because it breaks a client this repo cannot
+    see.
+
+    **Two channels, deliberately.** `/jobs/{jobId}/events` carries *notifications*
+    only — "status changed", "step N landed" — and never a payload. Data comes
+    through ordinary GETs, which the client issues for the steps it still wants. If
+    a run outruns the display the client skips ahead; nothing queues in the server.
+    Pushing payloads down the event stream would move that queue server-side.
+
+    **The server derives nothing.** Every number here was produced by the
+    simulation. Quantities under `PlanetDerived` are computed by `PlanetBuilder`
+    through a worker process, never by this server, and never in the browser.
+
+servers:
+  - url: /api/v1
+    description: Same-origin, behind the dev proxy or a reverse proxy.
+
+tags:
+  - name: planets
+    description: The catalogue of bodies and the runs that produce their fields.
+  - name: jobs
+    description: A single simulation run — its events and its recorded steps.
+  - name: exports
+    description: Baking a patch of a finished body into a heightmap.
+  - name: meta
+    description: Server and schema identity.
+
+paths:
+  /health:
+    get:
+      tags: [meta]
+      summary: Liveness, and what this server can currently do.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  /planets:
+    get:
+      tags: [planets]
+      summary: Every planet in the catalogue, newest first.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PlanetSummary" }
+    post:
+      tags: [planets]
+      summary: Create a planet and start the run that solves its field.
+      description: |
+        The derived quantities are obtained from `PlanetBuilder` before the run
+        starts; if that cannot be reached the request fails rather than returning a
+        planet with invented properties.
+
+        These parameters become a **launch config** — the TOML file described by
+        `planet_run_schema/schema/config-v1.0.json`, written to the server's config
+        directory as `<jobId>.toml` and the only input the run is given. The server
+        validates it against that schema before spawning anything, so a config it
+        could not honour is a failed request rather than a run that quietly ignored
+        a value. Anything the config has no key for comes back in
+        `unappliedParams`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlanetParams" }
+      responses:
+        "201":
+          description: Created, and the run has been started.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [planet, jobId]
+                properties:
+                  planet: { $ref: "#/components/schemas/PlanetSummary" }
+                  jobId:
+                    type: string
+                    description: Feed this to `/jobs/{jobId}/events`.
+              examples:
+                created:
+                  value:
+                    planet:
+                      id: "pl_7f3a"
+                      params: { name: "Kestrel", seed: "kestrel-1", diameterM: 12742000,
+                                startMantleTemperatureK: 1650, ageGyr: 0.05,
+                                waterGelM: 2700, maxPoints: 500 }
+                      derived: { radiusM: 6371000, massKg: 5.972e24, surfaceGravity: 9.82,
+                                 escapeVelocityMs: 11186, surfaceAreaM2: 5.1e14,
+                                 cells: 500, simCellM: 1010000, reliefM: 1000 }
+                      createdAt: "2026-08-03T09:12:44Z"
+                      jobId: "job_91c2"
+                    jobId: "job_91c2"
+        "422":
+          description: A parameter is outside the range the simulation accepts.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: The simulation could not be reached to derive or to start.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /planets/{planetId}:
+    get:
+      tags: [planets]
+      summary: One planet.
+      parameters:
+        - $ref: "#/components/parameters/PlanetId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlanetSummary" }
+        "404":
+          description: No such planet.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /planets/{planetId}/runs:
+    post:
+      tags: [planets]
+      summary: Start one simulation for a planet that already exists.
+      description: |
+        Creating a planet starts its first run; this is how a second one begins —
+        re-running a simulation, or running one that consumes what an earlier run
+        produced.
+
+        A `kind` this server cannot run is **refused**, naming what it can run. A
+        simulation that does not exist is never queued, so a planet is never
+        reported as having been through something nothing ran.
+      parameters:
+        - $ref: "#/components/parameters/PlanetId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind]
+              properties:
+                kind:
+                  type: string
+                  description: The simulation to run, e.g. `core-surface-formation`.
+      responses:
+        "202":
+          description: Accepted; the run has been started.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [planet, jobId]
+                properties:
+                  planet: { $ref: "#/components/schemas/PlanetSummary" }
+                  jobId: { type: string }
+        "404":
+          description: No such planet.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: This server cannot run that simulation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503":
+          description: The simulation could not be started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /jobs/{jobId}:
+    get:
+      tags: [jobs]
+      summary: The run's current status.
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobStatus" }
+        "404":
+          description: No such job.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      tags: [jobs]
+      summary: Stop the run.
+      description: |
+        Stopping is the *only* control this API has over a running simulation. It
+        may start a run and it may stop one; it may never steer one. Feeding
+        anything from the display back into the physics would destroy both the
+        pure-observer guarantee and seeded reproducibility.
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "202": { description: Termination requested. }
+        "404":
+          description: No such job.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /jobs/{jobId}/events:
+    get:
+      tags: [jobs]
+      summary: Server-Sent Events — notifications only, never payloads.
+      description: |
+        Two named events:
+
+        * `status` — data is a `JobStatus`.
+        * `step` — data is `{"step": <int>}`, announcing that a recorded step has
+          become readable. A step is announced only once its part file is closed
+          and listed in the run's manifest; an in-progress HDF5 file is never
+          offered, because it cannot be read safely while it is being written.
+
+        The client fetches what it still wants. Announcements it skipped are simply
+        never fetched.
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: An event stream that stays open until the run ends.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: |
+                event: status
+                data: {"state":"running","stage":"evolving","progress":0.12,"step":36}
+
+                event: step
+                data: {"step":36}
+        "404":
+          description: No such job.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /jobs/{jobId}/steps:
+    get:
+      tags: [jobs]
+      summary: Which steps are readable right now.
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [steps]
+                properties:
+                  steps:
+                    type: array
+                    items: { type: integer }
+                    description: Recorded steps whose part file is closed.
+
+  /jobs/{jobId}/steps/{step}/cloud:
+    get:
+      tags: [jobs]
+      summary: One recorded step's surface field.
+      description: |
+        Values are the simulation's own, one per point of its cloud — the model's
+        own cells, not a resampling onto a regular grid. Interpolating here would
+        draw a surface the model never computed.
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+        - name: step
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: fields
+          in: query
+          required: false
+          description: |
+            Comma-separated dataset names to return beside the elevation, by the
+            names the run file gives them (`plate_id`, `age`, `temperature`).
+            Omitted, only elevation comes back — a movie of topography must not
+            pay for every layer the run recorded.
+
+            A name the run did not record is returned in `absent` rather than
+            failing the request: a missing layer is a fact about the run, not a
+            bad request.
+          schema: { type: string }
+          example: "elevation,plate_id,age"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CloudFrame" }
+        "404":
+          description: No such job, or that step is not readable.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: |
+            The run's `schemaMajor` is not one this server understands. Refused
+            rather than half-read.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /exports:
+    post:
+      tags: [exports]
+      summary: Start baking a patch into a heightmap.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [planetId, patch, spec]
+              properties:
+                planetId: { type: string }
+                patch: { $ref: "#/components/schemas/PatchSpec" }
+                spec: { $ref: "#/components/schemas/ExportSpec" }
+      responses:
+        "202":
+          description: Accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: string }
+        "501":
+          description: |
+            No exporter is wired up yet. Reported rather than returning an archive
+            of invented terrain.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /exports/{exportId}:
+    get:
+      tags: [exports]
+      summary: Progress of a bake. Polled, not streamed.
+      parameters:
+        - $ref: "#/components/parameters/ExportId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobStatus" }
+        "404":
+          description: No such export.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /exports/{exportId}/archive:
+    get:
+      tags: [exports]
+      summary: Download a finished bake.
+      parameters:
+        - $ref: "#/components/parameters/ExportId"
+      responses:
+        "200":
+          description: The archive.
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        "404":
+          description: No such export, or it has not finished.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+components:
+  parameters:
+    PlanetId:
+      name: planetId
+      in: path
+      required: true
+      schema: { type: string }
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema: { type: string }
+    ExportId:
+      name: exportId
+      in: path
+      required: true
+      schema: { type: string }
+
+  schemas:
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: A stable machine-readable code.
+          examples: ["not_found", "schema_major_unsupported", "simulation_unavailable"]
+        message:
+          type: string
+          description: What went wrong, in a sentence a user can act on.
+
+    Health:
+      type: object
+      required: [status, schemaMajor, exporter]
+      properties:
+        status: { type: string, enum: [ok] }
+        schemaMajor:
+          type: integer
+          description: The run-format MAJOR this server can read.
+        exporter:
+          type: boolean
+          description: Whether heightmap export is wired up.
+
+    PlanetParams:
+      type: object
+      description: Initial conditions. Every field is an input the simulation consumes.
+      required: [name, seed, diameterM, startMantleTemperatureK, ageGyr, waterGelM,
+                 maxPoints]
+      properties:
+        name: { type: string }
+        seed:
+          type: string
+          description: |
+            Free text. The server maps it to the simulation's integer seed by a
+            stable hash and records the integer it used, so a run is reproducible
+            from what is stored rather than from this string alone.
+        diameterM: { type: number, description: "m" }
+        startMantleTemperatureK:
+          type: number
+          description: |
+            K. The temperature the mantle STARTS from -- the post-magma-ocean
+            initial condition of the two-layer energy balance, written to the
+            launch config as `start_mantle_temperature_k`.
+
+            It replaced `mantlePotentialK`, which named an OUTCOME: the
+            present-day temperature a run evolves to. That has no key in the
+            launch config, because setting it would be fixing a result, so the
+            old field could never take effect however it was wired.
+        ageGyr: { type: number, description: "Gyr at which the run starts" }
+        waterGelM: { type: number, description: "m of global equivalent layer" }
+        maxPoints:
+          type: integer
+          minimum: 100
+          maximum: 10000
+          description: |
+            Size of the simulated point cloud. The surface is a cloud of points,
+            each owning a Voronoi cell; this cap fixes the finest simulated scale.
+
+    PlanetDerived:
+      type: object
+      description: |
+        Computed by `PlanetBuilder`, relayed unchanged. The server does not
+        calculate any of these and the client must not either.
+      required: [radiusM, massKg, surfaceGravity, escapeVelocityMs, surfaceAreaM2,
+                 cells, simCellM, reliefM]
+      properties:
+        radiusM: { type: number }
+        massKg: { type: number }
+        surfaceGravity: { type: number, description: "m/s^2" }
+        escapeVelocityMs: { type: number }
+        surfaceAreaM2: { type: number }
+        cells: { type: integer, description: "Points in the cloud; each owns a Voronoi cell." }
+        simCellM:
+          type: number
+          description: Centre-to-centre cell spacing; nothing smaller was simulated.
+        reliefM:
+          type: number
+          description: Metres of relief per unit of the dimensionless elevation field.
+
+    PlanetSummary:
+      type: object
+      required: [id, params, derived, createdAt, jobId]
+      properties:
+        id: { type: string }
+        params: { $ref: "#/components/schemas/PlanetParams" }
+        derived: { $ref: "#/components/schemas/PlanetDerived" }
+        createdAt: { type: string, format: date-time }
+        jobId:
+          type: [string, "null"]
+          description: |
+            The most recent run of this body. `runs` is the full story and this
+            is its last entry; it stays because clients read it.
+        runs:
+          type: array
+          description: |
+            Every simulation that has been run for this body, oldest first. A
+            planet is not one run: a simulation can be re-run, and later ones
+            consume what earlier ones wrote. This is what a chooser reads to know
+            whether a simulation's inputs exist — the answer is a run directory
+            on disk, never an assumption.
+          items:
+            type: object
+            required: [kind, jobId, startedAt]
+            properties:
+              kind: { type: string, example: core-surface-formation }
+              jobId: { type: string }
+              startedAt: { type: string }
+        unappliedParams:
+          type: array
+          items: { type: string }
+          description: |
+            Parameters accepted and stored but NOT passed to the simulation,
+            because the launch config has no key for them. Listed so a value the
+            user set is never silently ignored.
+
+    JobStatus:
+      description: |
+        `stepsTotal` appears in EVERY variant because it is a property of the job
+        rather than of the state it is in: a run is `steps` iterations long from
+        the moment it is queued. A client reads one field in every state instead
+        of remembering the last value it happened to see, which also means a
+        display can still say "40 of 40" after the run is over.
+      oneOf:
+        - type: object
+          required: [state, position, stepsTotal]
+          properties:
+            state: { type: string, enum: [queued] }
+            position: { type: integer }
+            stepsTotal: { type: integer }
+        - type: object
+          required: [state, stage, progress, step, stepsTotal]
+          properties:
+            state: { type: string, enum: [running] }
+            stage: { type: string }
+            progress: { type: number, minimum: 0, maximum: 1 }
+            step:
+              type: integer
+              description: |
+                The last iteration the run has recorded, as the run itself
+                reports it. Counted from 1; 0 means nothing recorded yet.
+            stepsTotal: { type: integer }
+        - type: object
+          required: [state, elapsedSeconds, stepsTotal]
+          properties:
+            state: { type: string, enum: [complete] }
+            elapsedSeconds: { type: number }
+            stepsTotal: { type: integer }
+        - type: object
+          required: [state, code, stepsTotal]
+          properties:
+            state: { type: string, enum: [failed] }
+            code: { type: string }
+            stepsTotal: { type: integer }
+      discriminator:
+        propertyName: state
+
+    CloudFrame:
+      type: object
+      required: [step, t, elevation, seaLevel, schemaMajor]
+      properties:
+        step: { type: integer }
+        t:
+          type: number
+          description: Fraction of the run's simulated span, 0–1.
+        elevation:
+          type: array
+          items: { type: number }
+          description: One value per simulated point, in the field's own units.
+        seaLevel:
+          type: [number, "null"]
+          description: |
+            `null` when the run recorded no sea level — which is the present case,
+            since the simulation carries no water inventory. Absent is reported as
+            absent; the client draws it as missing rather than as zero.
+        schemaMajor:
+          type: integer
+          description: The run format's MAJOR. A client refusing to match must not draw.
+        timeMyr:
+          type: number
+          description: Simulated time of this step, as the run recorded it.
+        fields:
+          type: object
+          description: |
+            The datasets `?fields=` asked for, keyed by **the name the run file
+            gives them** — `plate_id`, not `plateId`. The key is a dataset
+            identifier rather than an API field: quoting it is what makes a
+            number on screen traceable back to the array it came from.
+
+            The four attributes are relayed exactly as the file declares them and
+            are never invented here. `units: ""` means the run declared none, and
+            a client reports that rather than filling one in.
+          additionalProperties:
+            type: object
+            required: [values, units, kind, domain, longName]
+            properties:
+              values:
+                description: |
+                  One entry per element of `domain`. A `scalar` or `category`
+                  field is a flat array; a `vector` field is a row per element.
+              units: { type: string }
+              kind: { type: string, enum: [scalar, vector, category] }
+              domain: { type: string }
+              longName: { type: string }
+        domains:
+          type: object
+          description: |
+            Where the elements of each returned domain sit on the sphere, for the
+            domains the returned fields belong to.
+
+            **A field is paired with the positions of its own domain and no
+            other's.** The cloud creates and consumes points every step, so a
+            field computed before that happens is not co-indexed with
+            `cloud/pos` even on the steps where the lengths agree.
+          additionalProperties:
+            type: object
+            required: [pos]
+            properties:
+              pos:
+                type: array
+                description: Unit vectors, one row per element.
+                items:
+                  type: array
+                  items: { type: number }
+        available:
+          type: array
+          items: { type: string }
+          description: |
+            **Every dataset this step holds, by name** — including ones this
+            request did not ask for.
+
+            A frame answers two different questions and conflating them is a
+            bug: what was asked for (`fields`) and what is there (this). A
+            display fetches only the field it draws, so a client that judged
+            "does this run record temperature" from `fields` would answer no for
+            every layer except the one already on screen.
+        absent:
+          type: array
+          items: { type: string }
+          description: |
+            Requested names the run did not record. Reported so a client can say
+            a layer is unavailable instead of drawing zeros for it.
+
+    PatchSpec:
+      type: object
+      required: [centreLat, centreLon, widthM, heightM, bearingDeg, scaleError]
+      properties:
+        centreLat: { type: number }
+        centreLon: { type: number }
+        widthM: { type: number }
+        heightM: { type: number }
+        bearingDeg: { type: number }
+        scaleError:
+          type: number
+          description: Worst-case projection scale distortion over the patch.
+
+    ExportSpec:
+      type: object
+      required: [engine, resolution, tiles, detailOctaves, atTime]
+      properties:
+        engine: { type: string, enum: [unity, unreal, generic] }
+        resolution: { type: integer }
+        tiles: { type: integer }
+        detailOctaves: { type: integer }
+        atTime: { type: number }
