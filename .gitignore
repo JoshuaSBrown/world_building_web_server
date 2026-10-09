@@ -1,6 +1,19 @@
 # Rust build output
 /target
+/server/target
 
 # Run directories: simulation output, not source. Every byte in here is
 # reproducible from a seed and a config.
 /runs
+
+# The launch configs the server generates, one per job. Also reproducible: the
+# request that made one is recorded with the planet.
+/configs
+
+*/**/*.swp
+
+*/**/__pycache__
+
+*/**/node_modules
+
+.env

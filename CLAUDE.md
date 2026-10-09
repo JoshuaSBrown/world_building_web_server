@@ -1,5 +1,23 @@
 # web_server — orientation
 
+## Talk to the user in plain English — every repo, every reply
+
+A standing instruction from the user, and it applies no matter which directory
+the work is in:
+
+> "Can you please speak in plain english not geological terms. Don't assume I
+> have expertise in this area, when you are describing geology compare it to
+> house hold items if necessary so I can understand the principals."
+
+In practice: no geological or geophysical term goes unexplained — define it in
+ordinary words at first use, or replace it entirely. Do not assume prior
+expertise in this area. Where a mechanism is hard to picture, compare it to a
+household thing (skin forming on cooling soup, a cracker snapping, honey
+sheeting off a spoon, an ice cube shrinking as it floats). Abbreviations and
+symbols get the same treatment: spell out what they stand for and what they
+mean before leaning on them. The notebooks already owe this to their lay
+reader; conversation, explanations, and reports owe it too.
+
 An interactive display of a planet's surface: launches simulation runs and shows what
 they produce, live, as the files land.
 
@@ -118,6 +136,55 @@ web server extends that guarantee to a process boundary and must not weaken it.
 
 ---
 
+## Three pages, and two modes in the viewer
+
+- **Catalogue → planet → viewer.** Choosing a body opens its *simulations* page,
+  not the globe: a planet is not one run. The page lists what has been run for
+  that body and what can be run next, and an entry whose inputs do not exist is
+  **offered as blocked with the reason** rather than hidden or quietly greyed. A
+  control that cannot be pressed and does not say why is worse than no control.
+- **Prerequisites are checked against the files.** "Core & surface formation has
+  finished for this planet" means a run directory that says `complete`, asked of
+  the server — never inferred from the planet existing.
+- **The viewer has a simulation mode and an edit mode**, and the difference is
+  not cosmetic. Simulation mode offers every layer the run recorded and can play
+  the recorded steps in order. Edit mode offers **topography only**: an edit
+  moves the surface, and every other layer describes the surface before it moved.
+  They are withheld rather than hidden — pairing a physical field with a surface
+  it never belonged to is exactly the lie this repo is organised against — and
+  getting them back needs a **recalculation**, which the engine performs and the
+  browser never simulates.
+- **An edit is art and says so.** It is a delta on the run's own cells, kept
+  verbatim, and the planet reads `contains manual edits` while one is pending
+  (`docs/09`). Nothing downstream can apply one yet, and the button says that
+  instead of appearing to work.
+- **A movie is the recorded steps, in order.** Nothing is interpolated between
+  them to smooth the motion, and playback only exists once every step is
+  readable. The colour scale can be **held** across frames, because an auto scale
+  recomputed per frame makes a planet in steady state appear to churn.
+
+## The launch config is the input
+
+A run has exactly one input: a TOML launch config, described by
+`planet_run_schema/schema/config-v1.0.json`. `runner` writes one per job into
+`CONFIGS_DIR` (default `./configs`) as `<jobId>.toml` and spawns
+`evolve.py --config <that file>` — there is no other flag, so a parameter can never
+be set somewhere the simulation forgets to read.
+
+- **The config directory is not the run directory.** The run directory belongs to
+  the writer and its layout is the run format's; a config is this server's own
+  output, so where they are collected is a deployment's choice.
+- **It is validated before anything is spawned**, by running the contract's own
+  `validate_config.py` — not a second implementation of the same rules in Rust,
+  because two checkers drift and the one that matters is the one `evolve.py` is
+  held to. No validator, no run: a config nobody checked is how a parameter gets
+  dropped unnoticed. `RUN_SCHEMA` points at the `planet_run_schema` checkout.
+- **A request parameter the config has no key for is reported**, in
+  `unappliedParams`, never quietly dropped.
+- **Paths in it are absolute**, because the simulation is a subprocess with its own
+  working directory, and the file is reusable by hand: `python evolve.py --config
+  configs/<jobId>.toml` reproduces the run.
+
 ## The run directory is the interface
 
 The simulation writes a directory; the server watches it. There is no shared database
@@ -133,6 +200,36 @@ runs/<run_id>/
   figures/          rule-5 before/after/difference images
   run.log           subprocess stdout/stderr
 ```
+
+### What you may assume, and what you must ask the file
+
+**Assume exactly six things.** `schema_version` and `radius_m` in a part's root attrs,
+`time_s`/`time_myr` on each step, and `cloud/{pos, elevation, plate_id}` — geometry,
+topography, plate identity. That is the required core, guaranteed in *every* recorded
+step, and it is enough for both headline views. Anything else may be absent from a
+given run, and absent is drawn as absent.
+
+**Ask the file about everything else.** Every dataset declares itself in four
+attributes, and they are the contract — the group names are not:
+
+| attribute | use it for |
+|---|---|
+| `units` | the label and the legend. CF's attribute, udunits-parseable, `"1"` dimensionless. Never hardcode a unit you assume; `""` means *undeclared*, so report it rather than invent one |
+| `kind` | `scalar` → continuous colour scale; `vector` → trailing axis is components; `category` → colour by identity, never interpolate, difference only as changed/unchanged |
+| `domain` | **what the field is one-per.** Pair a field with `pos` only when the domains match |
+| `long_name` | what to call it on screen, so the UI does not carry its own name for a field |
+
+**`domain` is not the group name, and the difference matters.** `cloud/strain` sits
+beside `cloud/pos` and is *not* co-indexed with it — it is computed before the step
+creates and consumes points. It declares `domain="cloud_pre_transport"`. A length check
+would not save you: the lengths agree on the steps where nothing was created or
+consumed, and a field drawn one point out of register looks entirely plausible.
+
+**The flexibility is in the file, not in this server.** Endpoints and wire types stay
+hand-written per field: a new physics field never breaks a reader, but it appears in the
+UI when someone adds it here, deliberately. That is the trade — the *contract* never has
+to be renegotiated, and the display stays explicit about what it shows rather than
+surfacing whatever it happens to find.
 
 **The unit of publication is a part, not an iteration.** A closed HDF5 file is safe
 for unlimited concurrent readers; a file still open for writing is not, and SWMR --
@@ -192,6 +289,18 @@ the wire is a display-layer transform and gets declared like any other.
 with a clear message; half-rendering a file you do not understand is how a viewer
 starts lying. Keep a golden fixture run directory in the tests, so a schema drift in
 `PlanetBuilder` fails here as a test rather than in a browser.
+
+**The contract is executable, and this side should run it.** `planet_run_schema` holds
+the format as machine-readable YAML plus `validate.py`; point it at the golden fixture in
+the test suite so a drift is caught by the same checker the writer is held to, rather
+than by a second reading of the prose:
+
+```bash
+python planet_run_schema/validate.py --strict-vocabulary tests/golden/parts/run_p000.h5
+```
+
+That repo is a shared leaf, not a sibling: depending on it is allowed and importing
+`tectonics` still is not.
 
 ---
 
