@@ -15,6 +15,7 @@ npm run dev          # http://localhost:5173
 npm test             # logic tests, node --test, no framework
 npm run typecheck    # strict + noUncheckedIndexedAccess + exactOptionalPropertyTypes
 npm run build        # typecheck, then a production bundle in dist/
+npm run gen:api      # regenerate src/api/generated/ after editing the spec
 ```
 
 The client is complete and runs today. **The Rust server is not built yet**, so
@@ -39,7 +40,8 @@ src/
   styles.css             design tokens (no Tailwind — see below)
 
   api/
-    types.ts             the contract with the Rust server
+    generated/openapi.ts generated from web_server/api/openapi.yaml — never edited
+    types.ts             names for the generated shapes, used everywhere else
     client.ts            the only module that knows the server exists
 
   components/
