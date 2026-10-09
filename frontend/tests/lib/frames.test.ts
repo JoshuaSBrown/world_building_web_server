@@ -61,7 +61,7 @@ test("a frame fetched for ONE layer still knows the others are there", () => {
   // what was asked for.
   const asTopographyOnly: Frame = {
     ...FIXTURE,
-    fields: { elevation: FIXTURE.fields["elevation"]! },
+    fields: { elevation: FIXTURE.fields!["elevation"]! },
   };
   for (const id of ["temp", "tempgrad", "plate", "age"] as const) {
     const layer = BASE_LAYERS.find(l => l.id === id)!;
@@ -73,7 +73,7 @@ test("a frame fetched for ONE layer still knows the others are there", () => {
   // And a run that genuinely lacks a field still says so.
   const withoutTemperature: Frame = {
     ...asTopographyOnly,
-    available: FIXTURE.available.filter(n => n !== "temperature"),
+    available: FIXTURE.available!.filter(n => n !== "temperature"),
   };
   const temp = BASE_LAYERS.find(l => l.id === "temp")!;
   assert.match(String(unavailableBecause(temp, withoutTemperature)), /did not record/);
@@ -90,11 +90,11 @@ test("a field is paired with the positions of its own domain", () => {
   // Temperature is one value per MESH VERTEX and elevation one per cloud cell:
   // different lengths, and pairing either with the other's positions would draw
   // a plausible planet that is wrong everywhere.
-  const temp = FIXTURE.fields["temperature"]!;
-  const elev = FIXTURE.fields["elevation"]!;
+  const temp = FIXTURE.fields!["temperature"]!;
+  const elev = FIXTURE.fields!["elevation"]!;
   assert.notEqual(temp.domain, elev.domain);
-  assert.equal((temp.values as number[]).length, FIXTURE.domains[temp.domain]!.pos.length);
-  assert.equal((elev.values as number[]).length, FIXTURE.domains[elev.domain]!.pos.length);
+  assert.equal((temp.values as number[]).length, FIXTURE.domains![temp.domain]!.pos.length);
+  assert.equal((elev.values as number[]).length, FIXTURE.domains![elev.domain]!.pos.length);
   assert.notEqual((temp.values as number[]).length, (elev.values as number[]).length);
 });
 
@@ -108,7 +108,7 @@ test("a vector field is drawn as a magnitude, and says so", () => {
   assert.ok([...grad.values].every(v => Number.isFinite(v) && v >= 0), "a magnitude");
 
   // Against the raw rows: the transform is a length, not a component.
-  const rows = FIXTURE.fields["gradient"]!.values as number[][];
+  const rows = FIXTURE.fields!["gradient"]!.values as number[][];
   const longest = Math.max(...rows.map(r => Math.hypot(...r)));
   assert.ok(Math.abs(grad.scale.max - longest) < 1e-9, "the scale spans the real range");
 });
@@ -142,7 +142,7 @@ test("the cloud's own points come through unchanged, on the unit sphere", () => 
     const r = Math.hypot(sites.pos[i * 3]!, sites.pos[i * 3 + 1]!, sites.pos[i * 3 + 2]!);
     assert.ok(Math.abs(r - 1) < 1e-5, `point ${i} is on the sphere: |p| = ${r}`);
   }
-  const first = FIXTURE.domains["cloud"]!.pos[0]!;
+  const first = FIXTURE.domains!["cloud"]!.pos[0]!;
   assert.ok(Math.abs(sites.pos[0]! - first[0]!) < 1e-6, "the first point is the first point");
 });
 
@@ -221,7 +221,7 @@ test("a layer reports ITS OWN resolution, not the cloud's", () => {
   assert.equal(topo.elements, FIXTURE.elevation.length);
   // Reporting the cloud's count beside a temperature map would overstate what
   // that map resolves — 642 mesh vertices is not 562 simulated cells.
-  assert.equal(temp.elements, (FIXTURE.fields["temperature"]!.values as number[]).length);
+  assert.equal(temp.elements, (FIXTURE.fields!["temperature"]!.values as number[]).length);
 });
 
 test("a field that is flat almost everywhere says so", () => {
